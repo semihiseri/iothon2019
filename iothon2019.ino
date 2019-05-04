@@ -35,11 +35,15 @@ void callback_response(CoapPacket &packet, IPAddress ip, int port);
 // CoAP server endpoint url callback
 void callback_light(CoapPacket &packet, IPAddress ip, int port);
 
-IPAddress timeServer(129, 6, 15, 28); // time.nist.gov NTP server
-
 const int NTP_PACKET_SIZE = 48; // NTP time stamp is in the first 48 bytes of the message
 
 byte packetBuffer[ NTP_PACKET_SIZE]; //buffer to hold incoming and outgoing packets
+
+NBClient ipclient;
+// URL, path and port (for example: example.org)
+char server[] = "ifconfig.co";
+char path[] = "/ip";
+int port = 80; // port 80 is the default for HTTP
 
 // initialize the library instance
 NBClient client;
@@ -91,6 +95,24 @@ void callback_response(CoapPacket &packet, IPAddress ip, int port) {
   Serial.println(p);
 }
 
+void getIp()
+{
+  if (ipclient.connect(server, port)) {
+    Serial.println("connected");
+    // Make a HTTP request:
+    ipclient.print("GET ");
+    ipclient.print(path);
+    ipclient.println(" HTTP/1.1");
+    ipclient.print("Host: ");
+    ipclient.println(server);
+    ipclient.println("Connection: close");
+    ipclient.println();
+  } else {
+    // if you didn't get a connection to the server:
+    Serial.println("connection failed");
+  }
+}
+
 void setup()
 {
   // Open serial communications and wait for port to open:
@@ -120,6 +142,10 @@ void setup()
   Serial.println("Server IP address=");
   Serial.println(LocalIP);
 
+  getIp();
+
+  delay(1000);
+
   // LED State
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
@@ -147,14 +173,24 @@ void setup()
 
 void loop()
 {
+  if (ipclient.available()) {
+    Serial.print((char)ipclient.read());
+  }
+
+  // if the server's disconnected, stop the client:
+  if (!ipclient.available() && !ipclient.connected()) {
+    Serial.println();
+    Serial.println("disconnecting.");
+    ipclient.stop();
+  }
+  
   // send GET or PUT coap request to CoAP server.
   // To test, use libcoap, microcoap server...etc
   // int msgid = coap.put(IPAddress(10, 0, 0, 1), 5683, "light", "1");
   //coap.me
-  Serial.println("Send Request");
+  //Serial.println("Send Request");
   //134.102.218.18
-  int msgid = coap.get(IPAddress(134, 102, 218, 18), 5683, "3");
+  //int msgid = coap.get(IPAddress(134, 102, 218, 18), 5683, "3");
   
-  delay(1000);
   coap.loop();
 }

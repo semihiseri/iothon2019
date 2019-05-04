@@ -1,1 +1,1 @@
-#define SECRET_PINNUMBER     ""
+#define SECRET_PINNUMBER     "0000"
