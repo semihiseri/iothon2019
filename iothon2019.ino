@@ -1,22 +1,5 @@
 /*
 
-  Udp NTP Client
-
-  Get the time from a Network Time Protocol (NTP) time server
-  Demonstrates use of UDP sendPacket and ReceivePacket
-  For more on NTP time servers and the messages needed to communicate with them,
-  see http://en.wikipedia.org/wiki/Network_Time_Protocol
-
-  created 4 Sep 2010
-  by Michael Margolis
-  modified 9 Apr 2012
-  by Tom Igoe
-
-  modified 6 Dec 2017 ported from WiFi101 to MKRGSM
-  by Arturo Guadalupi
- 
-  This code is in the public domain.
-
 */
 
 #include <MKRNB.h>
@@ -45,10 +28,17 @@ char server[] = "ifconfig.co";
 char path[] = "/ip";
 int port = 80; // port 80 is the default for HTTP
 
+char dserver[] = "hedebele.pythonanywhere.com";
+char dpath[] = "/device1";
+
 // initialize the library instance
 NBClient client;
 GPRS gprs;
 NB nbAccess;
+
+//device parameters
+bool devOn;
+String powerConsumption;
 
 // A UDP instance to let us send and receive packets over UDP
 NBUDP Udp;
@@ -113,6 +103,128 @@ void getIp()
   }
 }
 
+void getData()
+{
+  String content;
+  char lastchar;
+  NBClient httpclient;
+  Serial.println("Connecting to get data...");
+  if (httpclient.connect(dserver, port)) {
+    Serial.println("connected");
+    // Make a HTTP request:
+    httpclient.print("GET ");
+    httpclient.print(dpath);
+    httpclient.println(" HTTP/1.1");
+    httpclient.print("Host: ");
+    httpclient.println(dserver);
+    httpclient.println("Connection: close");
+    httpclient.println();
+  } else {
+    // if you didn't get a connection to the server:
+    Serial.println("connection failed");
+  }
+
+  while(true)
+  {
+    if (httpclient.available()) {
+      lastchar = (char)httpclient.read(); 
+      if (lastchar == '_')
+      {
+        Serial.println();
+        Serial.println("stopping...");
+
+        if (content.indexOf("ON") > 0)
+        {
+          devOn = true;
+          powerConsumption = content.substring(content.indexOf("ON")+3);
+        }
+        if (content.indexOf("OFF") > 0)
+        {
+          devOn = false;
+          powerConsumption = content.substring(content.indexOf("OFF")+4);
+        }
+
+        Serial.println(devOn);
+        Serial.println(powerConsumption);
+        
+        delay(100);
+        //httpclient.stop();
+        delay(100);
+        return;
+      }
+      content+= lastchar;
+      Serial.print(lastchar);
+    }
+
+    // if the server's disconnected, stop the client:
+    if (!httpclient.available() && !httpclient.connected()) {
+      delay(100);
+      Serial.println();
+      Serial.println("disconnecting.");
+      httpclient.stop();
+  
+      break;
+    }
+  }
+}
+
+#define HYPERDISPLAY_USE_PRINT 1
+#include "HyperDisplay_UG2856KLBAG01.h"   // Your library can be installed here: http://librarymanager/All#SparkFun_Transparent_Graphical_OLED
+                                          // The rest of the Layer Cake:         http://librarymanager/All#SparkFun_HyperDisplay_SSD1309
+                                          //                                     http://librarymanager/All#SparkFun_HyperDisplay                                          
+
+#define HYPERDISPLAY_USE_PRINT 1
+//////////////////////////
+//      User Setup      //
+//////////////////////////
+#define SERIAL_PORT Serial  
+#define WIRE_PORT Wire      // Used if USE_SPI == 0
+#define SPI_PORT SPI        // Used if USE_SPI == 1
+
+#define RES_PIN 2           // Optional
+#define CS_PIN 4            // Used only if USE_SPI == 1
+#define DC_PIN 5            // Used only if USE_SPI == 1
+
+#define USE_SPI 0           // Choose your interface. 0 = I2C, 1 = SPI
+
+// Object Declaration. A class exists for each interface option
+#if USE_SPI
+  UG2856KLBAG01_SPI myTOLED;  // Declare a SPI-based Transparent OLED object called myTOLED
+#else
+  UG2856KLBAG01_I2C myTOLED;  // Declare a I2C-based Transparent OLED object called myTOLED
+#endif /* USE_SPI */
+
+void setupDisplay()
+{  
+  #if USE_SPI 
+  SPI_PORT.begin();
+  myTOLED.begin(CS_PIN, DC_PIN, SPI_PORT);                  // Begin for SPI requires that you provide the CS and DC pin numbers
+#else
+  WIRE_PORT.begin();
+  myTOLED.begin(WIRE_PORT, false, SSD1309_ARD_UNUSED_PIN);  // Begin for I2C has default values for every argument
+  Wire.setClock(400000);
+#endif /* USSE_SPI */
+
+  bool kedi = true;
+  
+  myTOLED.setCurrentWindowColorSequence((color_t) &kedi);
+  
+  myTOLED.setTextCursor(20,20);
+
+  myTOLED.println("Starting...");
+
+  //myTOLED.rectangleSet(0, 0, 65, 35,true);
+
+  //myTOLED.setCurrentWindowColorSequence((color_t) &kedi);
+
+  //myTOLED.setTextCursor(0,0);
+
+  /*myTOLED.write('k');
+  myTOLED.write('e');
+  myTOLED.write('d');
+  myTOLED.write('i');*/
+}
+
 void setup()
 {
   // Open serial communications and wait for port to open:
@@ -120,6 +232,8 @@ void setup()
   while (!Serial) {
     ; // wait for serial port to connect. Needed for native USB port only
   }
+
+  setupDisplay();
 
   Serial.println("Starting Arduino GPRS NTP client.");
   // connection state
@@ -133,7 +247,7 @@ void setup()
       connected = true;
     } else {
       Serial.println("Not connected");
-      delay(1000);
+      delay(1000);  
     }
   }
 
@@ -142,9 +256,7 @@ void setup()
   Serial.println("Server IP address=");
   Serial.println(LocalIP);
 
-  getIp();
-
-  delay(1000);
+  //getIp();
 
   // LED State
   pinMode(LED_BUILTIN, OUTPUT);
@@ -171,9 +283,36 @@ void setup()
   coap.start();
 }
 
-void loop()
+void updateDisplay()
 {
-  if (ipclient.available()) {
+  bool kedi = true;
+  
+  myTOLED.setCurrentWindowColorSequence((color_t) &kedi);
+
+  myTOLED.rectangleClear(20, 20, 128, 28, true); //clear display
+  myTOLED.rectangleClear(50, 40, 80, 48, true); //clear display
+  
+  myTOLED.setTextCursor(20,20);
+  
+  if (devOn)
+  {
+    myTOLED.println("Device running...");
+  }
+  else
+  {
+    myTOLED.println("Device is off");
+  }
+
+  myTOLED.setTextCursor(50,40);
+  myTOLED.println(powerConsumption);
+}
+
+void loop()
+{  
+  getData();
+  updateDisplay();
+  delay(1000);
+  /*if (ipclient.available()) {
     Serial.print((char)ipclient.read());
   }
 
@@ -182,7 +321,11 @@ void loop()
     Serial.println();
     Serial.println("disconnecting.");
     ipclient.stop();
-  }
+
+    delay(2000);
+
+    getData();
+  }*/
   
   // send GET or PUT coap request to CoAP server.
   // To test, use libcoap, microcoap server...etc
